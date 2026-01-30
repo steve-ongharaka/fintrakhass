@@ -1,0 +1,1623 @@
+generator client {
+    provider = "prisma-client-js"
+    binaryTargets = ["native", "rhel-openssl-3.0.x"]
+    
+}
+
+datasource db {
+    provider = "postgresql"
+    url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  admin
+  operator
+  viewer
+}
+
+enum WellStatus {
+  active
+  inactive
+  shut_in
+}
+
+enum WellType {
+  oil
+  gas
+  water_injection
+}
+
+enum FacilityType {
+  production
+  processing
+  storage
+}
+
+enum FacilityStatus {
+  active
+  inactive
+}
+
+enum WellTestType {
+  production_test
+  flow_test
+  pressure_buildup
+  interference_test
+  drill_stem_test
+}
+
+enum AllocationMethod {
+  manual
+  test_based
+  pro_rata
+  potential_based
+}
+
+model User {
+  id                String             @id @default(cuid())
+  email             String             @unique
+  password          String
+  firstName         String?
+  lastName          String?
+  role              UserRole           @default(viewer)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  productionFdc     ProductionFdc[]
+  wellTests         WellTest[]
+  allocations       Allocation[]
+  correctionFactors CorrectionFactor[]
+  dataImports       DataImport[]
+  reportTemplates   ReportTemplate[]
+  scheduledReports  ScheduledReport[]
+
+  @@map("users")
+}
+
+model Facility {
+  id            String         @id @default(cuid())
+  facilityName  String
+  facilityId    String         @unique
+  field         String?
+  facilityType  FacilityType   @default(production)
+  operator      String?
+  location      String?
+  capacity      Float?
+  status        FacilityStatus @default(active)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  wells         Well[]
+  meters        Meter[]
+  tanks         Tank[]
+
+  @@map("facilities")
+}
+
+model Well {
+  id                    String               @id @default(cuid())
+  wellName              String
+  wellId                String               @unique
+  field                 String?
+  facilityId            String?
+  facility              Facility?            @relation(fields: [facilityId], references: [id], onDelete: SetNull)
+  status                WellStatus           @default(active)
+  wellType              WellType             @default(oil)
+  latitude              Float?
+  longitude             Float?
+  spudDate              DateTime?
+  completionDate        DateTime?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  productionFdc         ProductionFdc[]
+  productionStd         ProductionStd[]
+  wellTests             WellTest[]
+  productionAllocations ProductionAllocation[]
+  alerts                WellAlert[]
+  performanceMetrics    PerformanceMetric[]
+  downtime              Downtime[]
+
+  @@map("wells")
+}
+
+model Product {
+  id                  String   @id @default(cuid())
+  productName         String
+  productCode         String   @unique
+  unitOfMeasurement   String?
+  standardTemperature Float?   @default(60)
+  standardPressure    Float?   @default(14.7)
+  density             Float?
+  apiGravity          Float?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@map("products")
+}
+
+model ProductionFdc {
+  id                     String    @id @default(cuid())
+  productionDate         DateTime
+  wellId                 String
+  well                   Well      @relation(fields: [wellId], references: [id], onDelete: Cascade)
+  grossOilVolume         Float?    @default(0)
+  grossGasVolume         Float?    @default(0)
+  grossWaterVolume       Float?    @default(0)
+  operatingHours         Float?    @default(0)
+  flowingTubingPressure  Float?
+  flowingCasingPressure  Float?
+  chokeSize              Float?
+  sandWaterPercentage    Float?    @default(0)
+  temperature            Float?
+  comments               String?
+  createdById            String?
+  createdBy              User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  productionStd          ProductionStd?
+
+  @@unique([wellId, productionDate])
+  @@map("production_fdc")
+}
+
+model ProductionStd {
+  id                   String        @id @default(cuid())
+  fdcId                String        @unique
+  fdc                  ProductionFdc @relation(fields: [fdcId], references: [id], onDelete: Cascade)
+  productionDate       DateTime
+  wellId               String
+  well                 Well          @relation(fields: [wellId], references: [id], onDelete: Cascade)
+  netOilVolume         Float?        @default(0)
+  stdGasVolume         Float?        @default(0)
+  stdWaterVolume       Float?        @default(0)
+  gor                  Float?        @default(0)
+  waterCut             Float?        @default(0)
+  productionEfficiency Float?        @default(0)
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  @@map("production_std")
+}
+
+model WellTest {
+  id                    String       @id @default(cuid())
+  testDate              DateTime
+  wellId                String
+  well                  Well         @relation(fields: [wellId], references: [id], onDelete: Cascade)
+  testType              WellTestType @default(production_test)
+  duration              Float?       @default(0) // hours
+  oilRate               Float?       @default(0) // bbl/day
+  gasRate               Float?       @default(0) // scf/day
+  waterRate             Float?       @default(0) // bbl/day
+  gor                   Float?       @default(0) // scf/bbl
+  waterCut              Float?       @default(0) // %
+  flowingTubingPressure Float?       // psi
+  flowingCasingPressure Float?       // psi
+  temperature           Float?       // °F
+  chokeSize             Float?       // 1/64"
+  staticPressure        Float?       // psi (for pressure buildup tests)
+  comments              String?
+  createdById           String?
+  createdBy             User?        @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+
+  @@unique([wellId, testDate])
+  @@map("well_tests")
+}
+
+model Allocation {
+  id                    String                 @id @default(cuid())
+  allocationDate        DateTime
+  facilityId            String?
+  method                AllocationMethod       @default(manual)
+  totalOilVolume        Float?                 @default(0) // Total volume to allocate
+  totalGasVolume        Float?                 @default(0)
+  totalWaterVolume      Float?                 @default(0)
+  comments              String?
+  createdById           String?
+  createdBy             User?                  @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  productionAllocations ProductionAllocation[]
+
+  @@map("allocations")
+}
+
+model ProductionAllocation {
+  id                   String     @id @default(cuid())
+  allocationId         String
+  allocation           Allocation @relation(fields: [allocationId], references: [id], onDelete: Cascade)
+  wellId               String
+  well                 Well       @relation(fields: [wellId], references: [id], onDelete: Cascade)
+  allocatedOilVolume   Float?     @default(0)
+  allocatedGasVolume   Float?     @default(0)
+  allocatedWaterVolume Float?     @default(0)
+  allocationFactor     Float?     @default(0) // %
+  testOilRate          Float?     @default(0) // Reference test rate
+  testGasRate          Float?     @default(0)
+  testWaterRate        Float?     @default(0)
+  comments             String?
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+
+  @@unique([allocationId, wellId])
+  @@map("production_allocations")
+}
+
+enum ImportStatus {
+  pending
+  processing
+  completed
+  failed
+}
+
+enum ImportType {
+  production
+  well_tests
+  allocations
+  wells
+  facilities
+}
+
+model CorrectionFactor {
+  id                String   @id @default(cuid())
+  productCode       String
+  shrinkageFactor   Float?   @default(1.0)
+  vcfFactor         Float?   @default(1.0)
+  densityAt15C      Float?
+  thermalExpansion  Float?   @default(0.0007)
+  description       String?
+  effectiveFrom     DateTime @default(now())
+  effectiveTo       DateTime?
+  isActive          Boolean  @default(true)
+  createdById       String?
+  createdBy         User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("correction_factors")
+}
+
+model CalculationSettings {
+  id                        String   @id @default(cuid())
+  settingKey                String   @unique
+  settingValue              String
+  description               String?
+  category                  String?  @default("general")
+  dataType                  String?  @default("string")
+  isActive                  Boolean  @default(true)
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  @@map("calculation_settings")
+}
+
+model DataImport {
+  id                String       @id @default(cuid())
+  importType        ImportType
+  fileName          String
+  status            ImportStatus @default(pending)
+  recordsTotal      Int          @default(0)
+  recordsSuccessful Int          @default(0)
+  recordsFailed     Int          @default(0)
+  errorLog          String?
+  startedAt         DateTime     @default(now())
+  completedAt       DateTime?
+  importedById      String?
+  importedBy        User?        @relation(fields: [importedById], references: [id], onDelete: SetNull)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  @@map("data_imports")
+}
+
+enum ReportType {
+  production_summary
+  well_performance
+  field_analysis
+  allocation_report
+  decline_curve
+  custom
+}
+
+enum ReportFormat {
+  pdf
+  excel
+  csv
+}
+
+enum ReportFrequency {
+  once
+  daily
+  weekly
+  monthly
+}
+
+enum AlertType {
+  low_production
+  high_water_cut
+  high_gor
+  pressure_drop
+  equipment_failure
+  downtime
+}
+
+enum AlertSeverity {
+  info
+  warning
+  critical
+}
+
+enum AlertStatus {
+  active
+  acknowledged
+  resolved
+}
+
+enum DowntimeReason {
+  scheduled_maintenance
+  unscheduled_maintenance
+  equipment_failure
+  weather
+  regulatory
+  other
+}
+
+model ReportTemplate {
+  id                String            @id @default(cuid())
+  name              String
+  description       String?
+  reportType        ReportType        @default(custom)
+  filters           String?           // JSON string of filter configuration
+  includeCharts     Boolean           @default(true)
+  includeDataTable  Boolean           @default(true)
+  createdById       String?
+  createdBy         User?             @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  scheduledReports  ScheduledReport[]
+
+  @@map("report_templates")
+}
+
+model ScheduledReport {
+  id              String          @id @default(cuid())
+  templateId      String
+  template        ReportTemplate  @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  frequency       ReportFrequency @default(monthly)
+  dayOfWeek       Int?            // 0-6 for weekly reports
+  dayOfMonth      Int?            // 1-31 for monthly reports
+  time            String?         // HH:MM format
+  recipients      String?         // JSON array of email addresses
+  format          ReportFormat    @default(pdf)
+  isActive        Boolean         @default(true)
+  lastRunAt       DateTime?
+  nextRunAt       DateTime?
+  createdById     String?
+  createdBy       User?           @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@map("scheduled_reports")
+}
+
+model WellAlert {
+  id              String        @id @default(cuid())
+  wellId          String
+  well            Well          @relation(fields: [wellId], references: [id], onDelete: Cascade)
+  alertType       AlertType
+  severity        AlertSeverity @default(warning)
+  status          AlertStatus   @default(active)
+  message         String
+  thresholdValue  Float?
+  actualValue     Float?
+  detectedAt      DateTime      @default(now())
+  acknowledgedAt  DateTime?
+  acknowledgedBy  String?
+  resolvedAt      DateTime?
+  resolvedBy      String?
+  comments        String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@map("well_alerts")
+}
+
+model PerformanceMetric {
+  id                    String   @id @default(cuid())
+  wellId                String
+  well                  Well     @relation(fields: [wellId], references: [id], onDelete: Cascade)
+  metricDate            DateTime
+  oilProduction         Float?   @default(0) // bbl/day
+  gasProduction         Float?   @default(0) // scf/day
+  waterProduction       Float?   @default(0) // bbl/day
+  gor                   Float?   @default(0)
+  waterCut              Float?   @default(0)
+  uptime                Float?   @default(0) // hours
+  efficiency            Float?   @default(0) // %
+  declineRate           Float?   @default(0) // % per year
+  cumulativeOil         Float?   @default(0)
+  cumulativeGas         Float?   @default(0)
+  cumulativeWater       Float?   @default(0)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@unique([wellId, metricDate])
+  @@map("performance_metrics")
+}
+
+model Downtime {
+  id          String         @id @default(cuid())
+  wellId      String
+  well        Well           @relation(fields: [wellId], references: [id], onDelete: Cascade)
+  startTime   DateTime
+  endTime     DateTime?
+  duration    Float?         // hours
+  reason      DowntimeReason @default(other)
+  description String?
+  impact      String?        // Lost production estimate
+  reportedBy  String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@map("downtime")
+}
+
+// ============================================
+// MODULE 1: METERING & CALIBRATION
+// ============================================
+
+enum MeterType {
+  turbine
+  ultrasonic
+  coriolis
+  orifice
+  positive_displacement
+  vortex
+}
+
+enum MeterStatus {
+  active
+  inactive
+  under_calibration
+  faulty
+}
+
+enum CalibrationStatus {
+  scheduled
+  in_progress
+  completed
+  overdue
+}
+
+model Meter {
+  id                  String             @id @default(cuid())
+  meterTag            String             @unique
+  meterName           String
+  meterType           MeterType          @default(turbine)
+  manufacturer        String?
+  model               String?
+  serialNumber        String?
+  facilityId          String?
+  facility            Facility?          @relation(fields: [facilityId], references: [id], onDelete: SetNull)
+  location            String?
+  installationDate    DateTime?
+  status              MeterStatus        @default(active)
+  minFlow             Float?             // Min flow rate
+  maxFlow             Float?             // Max flow rate
+  accuracy            Float?             // % accuracy
+  kFactor             Float?             // K-factor for calibration
+  lastCalibrationDate DateTime?
+  nextCalibrationDate DateTime?
+  calibrationInterval Int?               @default(12) // months
+  comments            String?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  readings            MeterReading[]
+  calibrations        MeterCalibration[]
+  provings            MeterProving[]
+  fiscalPoints        FiscalMeteringPoint[]
+
+  @@map("meters")
+}
+
+model MeterReading {
+  id              String   @id @default(cuid())
+  meterId         String
+  meter           Meter    @relation(fields: [meterId], references: [id], onDelete: Cascade)
+  readingDate     DateTime
+  grossVolume     Float?   @default(0)
+  netVolume       Float?   @default(0)
+  flowRate        Float?   @default(0)
+  temperature     Float?
+  pressure        Float?
+  density         Float?
+  bsw             Float?   @default(0) // Basic Sediment & Water %
+  meterFactor     Float?   @default(1.0)
+  vcf             Float?   @default(1.0) // Volume Correction Factor
+  ctpl            Float?   @default(1.0) // Combined Temperature/Pressure/Level correction
+  comments        String?
+  recordedBy      String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([meterId, readingDate])
+  @@map("meter_readings")
+}
+
+model MeterCalibration {
+  id                  String            @id @default(cuid())
+  meterId             String
+  meter               Meter             @relation(fields: [meterId], references: [id], onDelete: Cascade)
+  calibrationDate     DateTime
+  status              CalibrationStatus @default(scheduled)
+  calibrationType     String?           // in-situ, laboratory, master meter
+  performedBy         String?
+  certificationNumber String?
+  preCalibrationError Float?            // % error before calibration
+  postCalibrationError Float?           // % error after calibration
+  oldKFactor          Float?
+  newKFactor          Float?
+  oldMeterFactor      Float?
+  newMeterFactor      Float?
+  adjustments         String?           // JSON or text describing adjustments
+  certificateUrl      String?
+  nextCalibrationDate DateTime?
+  comments            String?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  @@map("meter_calibrations")
+}
+
+model MeterProving {
+  id              String   @id @default(cuid())
+  meterId         String
+  meter           Meter    @relation(fields: [meterId], references: [id], onDelete: Cascade)
+  provingDate     DateTime
+  proverType      String?  // bidirectional, unidirectional, compact
+  proverVolume    Float?   // Base volume of prover
+  runs            Int?     @default(5) // Number of proving runs
+  avgMeterFactor  Float?
+  repeatability   Float?   // % repeatability
+  temperature     Float?
+  pressure        Float?
+  flowRate        Float?
+  passOrFail      String?  @default("pass")
+  performedBy     String?
+  witnessedBy     String?
+  comments        String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("meter_provings")
+}
+
+// ============================================
+// MODULE 2: TANK/INVENTORY MANAGEMENT
+// ============================================
+
+enum TankType {
+  fixed_roof
+  floating_roof
+  spherical
+  bullet
+  underground
+}
+
+enum TankStatus {
+  in_service
+  out_of_service
+  under_maintenance
+  empty
+}
+
+enum MovementType {
+  receipt
+  dispatch
+  transfer_in
+  transfer_out
+  adjustment
+  loss
+}
+
+model Tank {
+  id                  String       @id @default(cuid())
+  tankTag             String       @unique
+  tankName            String
+  tankType            TankType     @default(fixed_roof)
+  facilityId          String?
+  facility            Facility?    @relation(fields: [facilityId], references: [id], onDelete: SetNull)
+  location            String?
+  product             String?      // Oil, water, condensate, etc.
+  nominalCapacity     Float?       // Total capacity in bbls
+  workingCapacity     Float?       // Usable capacity
+  deadStock           Float?       // Unusable bottom volume
+  shellHeight         Float?       // Tank height in feet
+  diameter            Float?       // Tank diameter in feet
+  roofType            String?
+  heatingSystem       Boolean?     @default(false)
+  status              TankStatus   @default(in_service)
+  lastInspectionDate  DateTime?
+  nextInspectionDate  DateTime?
+  calibrationTableId  String?      // Reference to strapping table
+  comments            String?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+  gaugings            TankGauging[]
+  stockMovements      StockMovement[]
+
+  @@map("tanks")
+}
+
+model TankGauging {
+  id                  String   @id @default(cuid())
+  tankId              String
+  tank                Tank     @relation(fields: [tankId], references: [id], onDelete: Cascade)
+  gaugingDate         DateTime
+  gaugingTime         String?  // HH:MM format
+  gaugeType           String?  // manual, automatic, radar
+  liquidLevel         Float?   // feet or inches
+  freeWaterLevel      Float?   // water bottom level
+  temperature         Float?
+  observedGravity     Float?   // API gravity observed
+  grossObservedVolume Float?   // GOV in bbls
+  grossStandardVolume Float?   // GSV in bbls
+  netStandardVolume   Float?   // NSV in bbls
+  freeWaterVolume     Float?
+  vcf                 Float?   @default(1.0)
+  bsw                 Float?   @default(0)
+  gaugedBy            String?
+  comments            String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@map("tank_gaugings")
+}
+
+model StockMovement {
+  id                  String       @id @default(cuid())
+  movementDate        DateTime
+  movementType        MovementType
+  tankId              String?
+  tank                Tank?        @relation(fields: [tankId], references: [id], onDelete: SetNull)
+  destinationTankId   String?      // For transfers
+  sourceDocument      String?      // BOL, ticket number, etc.
+  grossVolume         Float?       @default(0)
+  netVolume           Float?       @default(0)
+  temperature         Float?
+  density             Float?
+  apiGravity          Float?
+  bsw                 Float?       @default(0)
+  vcf                 Float?       @default(1.0)
+  product             String?
+  carrier             String?      // Truck, pipeline, vessel
+  vehicleId           String?      // Truck/vessel ID
+  sealNumbers         String?      // Security seal numbers
+  comments            String?
+  recordedBy          String?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  @@map("stock_movements")
+}
+
+// ============================================
+// MODULE 3: FISCAL/CUSTODY TRANSFER
+// ============================================
+
+enum FiscalPointType {
+  export
+  import
+  sales
+  custody_transfer
+  allocation
+}
+
+enum TransferStatus {
+  pending
+  in_progress
+  completed
+  disputed
+  cancelled
+}
+
+model FiscalMeteringPoint {
+  id                  String          @id @default(cuid())
+  pointTag            String          @unique
+  pointName           String
+  pointType           FiscalPointType @default(custody_transfer)
+  meterId             String?
+  meter               Meter?          @relation(fields: [meterId], references: [id], onDelete: SetNull)
+  facilityId          String?
+  location            String?
+  buyer               String?
+  seller              String?
+  contractReference   String?
+  effectiveDate       DateTime?
+  expiryDate          DateTime?
+  tolerancePercent    Float?          @default(0.5) // Allowable measurement tolerance
+  pricePerUnit        Float?
+  currency            String?         @default("USD")
+  isActive            Boolean         @default(true)
+  comments            String?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+  custodyTransfers    CustodyTransfer[]
+
+  @@map("fiscal_metering_points")
+}
+
+model CustodyTransfer {
+  id                    String              @id @default(cuid())
+  fiscalPointId         String
+  fiscalPoint           FiscalMeteringPoint @relation(fields: [fiscalPointId], references: [id], onDelete: Cascade)
+  transferDate          DateTime
+  ticketNumber          String?             @unique
+  status                TransferStatus      @default(pending)
+  product               String?
+  grossObservedVolume   Float?              @default(0)
+  grossStandardVolume   Float?              @default(0)
+  netStandardVolume     Float?              @default(0)
+  temperature           Float?
+  pressure              Float?
+  density               Float?
+  apiGravity            Float?
+  bsw                   Float?              @default(0)
+  vcf                   Float?              @default(1.0)
+  cpf                   Float?              @default(1.0) // Compressibility factor
+  shrinkageFactor       Float?              @default(1.0)
+  meterFactor           Float?              @default(1.0)
+  openingMeterReading   Float?
+  closingMeterReading   Float?
+  massKg                Float?              // Mass in kg
+  energyMmbtu           Float?              // Energy content
+  buyer                 String?
+  seller                String?
+  witnessedByBuyer      String?
+  witnessedBySeller     String?
+  bolNumber             String?             // Bill of Lading
+  invoiceNumber         String?
+  invoiceAmount         Float?
+  paymentStatus         String?             @default("pending")
+  disputeNotes          String?
+  comments              String?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  @@map("custody_transfers")
+}
+
+// ============================================
+// MODULE 4: BALANCE RECONCILIATION
+// ============================================
+
+enum ReconciliationType {
+  daily
+  monthly
+  quarterly
+  annual
+}
+
+enum ReconciliationStatus {
+  draft
+  pending_review
+  approved
+  rejected
+}
+
+model BalanceReconciliation {
+  id                    String                @id @default(cuid())
+  reconciliationDate    DateTime
+  periodStart           DateTime
+  periodEnd             DateTime
+  reconciliationType    ReconciliationType    @default(monthly)
+  status                ReconciliationStatus  @default(draft)
+  facilityId            String?
+  field                 String?
+  product               String?
+  // Production side
+  totalProduction       Float?                @default(0) // Total production volume
+  meterProduction       Float?                @default(0) // Metered production
+  allocatedProduction   Float?                @default(0) // Allocated to wells
+  // Inventory side
+  openingStock          Float?                @default(0)
+  closingStock          Float?                @default(0)
+  stockChange           Float?                @default(0)
+  // Sales/Transfer side
+  totalSales            Float?                @default(0)
+  totalTransfersIn      Float?                @default(0)
+  totalTransfersOut     Float?                @default(0)
+  // Losses and adjustments
+  flaring               Float?                @default(0)
+  venting               Float?                @default(0)
+  fuelAndLoss           Float?                @default(0)
+  spillage              Float?                @default(0)
+  shrinkage             Float?                @default(0)
+  otherLosses           Float?                @default(0)
+  adjustments           Float?                @default(0)
+  // Calculated balance
+  calculatedBalance     Float?                @default(0)
+  actualBalance         Float?                @default(0)
+  imbalance             Float?                @default(0)
+  imbalancePercent      Float?                @default(0)
+  tolerancePercent      Float?                @default(0.5)
+  withinTolerance       Boolean?              @default(true)
+  // Approvals
+  preparedBy            String?
+  reviewedBy            String?
+  approvedBy            String?
+  approvedAt            DateTime?
+  comments              String?
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+  imbalances            Imbalance[]
+
+  @@map("balance_reconciliations")
+}
+
+model Imbalance {
+  id                    String                @id @default(cuid())
+  reconciliationId      String
+  reconciliation        BalanceReconciliation @relation(fields: [reconciliationId], references: [id], onDelete: Cascade)
+  imbalanceDate         DateTime
+  product               String?
+  expectedVolume        Float?                @default(0)
+  actualVolume          Float?                @default(0)
+  varianceVolume        Float?                @default(0)
+  variancePercent       Float?                @default(0)
+  category              String?               // Measurement error, theft, evaporation, etc.
+  rootCause             String?
+  correctiveAction      String?
+  actionTakenBy         String?
+  actionDate            DateTime?
+  isResolved            Boolean               @default(false)
+  resolutionNotes       String?
+  comments              String?
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+
+  @@map("imbalances")
+}
+
+// ============================================
+// MODULE 5: NOMINATIONS & LIFTING
+// ============================================
+
+enum NominationStatus {
+  draft
+  submitted
+  confirmed
+  revised
+  cancelled
+}
+
+enum LiftingStatus {
+  scheduled
+  in_progress
+  completed
+  cancelled
+  delayed
+}
+
+model Nomination {
+  id                  String            @id @default(cuid())
+  nominationNumber    String            @unique
+  nominationDate      DateTime
+  nominationMonth     DateTime          // The month being nominated for
+  status              NominationStatus  @default(draft)
+  buyerId             String?
+  buyerName           String?
+  sellerId            String?
+  sellerName          String?
+  product             String?
+  nominatedVolume     Float?            @default(0)  // bbls
+  confirmedVolume     Float?            @default(0)
+  minVolume           Float?            // Minimum contractual volume
+  maxVolume           Float?            // Maximum contractual volume
+  tolerancePercent    Float?            @default(5)
+  contractReference   String?
+  loadingPort         String?
+  destinationPort     String?
+  preferredLaycan     String?           // Layday/Cancelling period
+  vesselName          String?
+  vesselSize          String?           // VLCC, Suezmax, Aframax, etc.
+  submittedBy         String?
+  submittedAt         DateTime?
+  confirmedBy         String?
+  confirmedAt         DateTime?
+  revisionNumber      Int?              @default(0)
+  revisionReason      String?
+  comments            String?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  liftings            Lifting[]
+
+  @@map("nominations")
+}
+
+model Lifting {
+  id                    String          @id @default(cuid())
+  liftingNumber         String          @unique
+  nominationId          String?
+  nomination            Nomination?     @relation(fields: [nominationId], references: [id], onDelete: SetNull)
+  status                LiftingStatus   @default(scheduled)
+  product               String?
+  scheduledDate         DateTime
+  actualStartDate       DateTime?
+  actualEndDate         DateTime?
+  vesselName            String?
+  vesselImo             String?         // IMO number
+  vesselSize            Float?          // DWT
+  loadingPort           String?
+  loadingTerminal       String?
+  destinationPort       String?
+  nominatedVolume       Float?          @default(0)
+  loadedVolume          Float?          @default(0)
+  billOfLadingVolume    Float?          @default(0)
+  temperature           Float?
+  apiGravity            Float?
+  bsw                   Float?          @default(0)
+  vcf                   Float?          @default(1.0)
+  laycanStart           DateTime?
+  laycanEnd             DateTime?
+  norTendered           DateTime?       // Notice of Readiness
+  berthingTime          DateTime?
+  hosesConnected        DateTime?
+  loadingStarted        DateTime?
+  loadingCompleted      DateTime?
+  hosesDisconnected     DateTime?
+  sailedTime            DateTime?
+  demurrageHours        Float?          @default(0)
+  demurrageRate         Float?
+  demurrageCost         Float?
+  bolNumber             String?
+  inspectorName         String?
+  inspectionCompany     String?
+  buyerRepresentative   String?
+  sellerRepresentative  String?
+  comments              String?
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+
+  @@map("liftings")
+}
+
+model LiftingAgreement {
+  id                  String    @id @default(cuid())
+  agreementNumber     String    @unique
+  agreementName       String
+  buyerId             String?
+  buyerName           String?
+  sellerId            String?
+  sellerName          String?
+  product             String?
+  effectiveDate       DateTime
+  expiryDate          DateTime?
+  contractType        String?   // Term, Spot, Evergreen
+  annualVolume        Float?    // Committed annual volume
+  minLiftingVolume    Float?
+  maxLiftingVolume    Float?
+  liftingFrequency    String?   // Monthly, Quarterly
+  pricingBasis        String?   // Dated Brent, WTI, etc.
+  pricingDifferential Float?
+  currency            String?   @default("USD")
+  paymentTerms        String?   // Days after B/L
+  loadingPort         String?
+  qualitySpecs        String?   // JSON or text
+  forceMajeure        String?
+  terminationClause   String?
+  isActive            Boolean   @default(true)
+  comments            String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@map("lifting_agreements")
+}
+
+// ============================================
+// MODULE 6: REGULATORY COMPLIANCE REPORTS
+// ============================================
+
+enum RegulatoryReportType {
+  dpr_monthly         // DPR Monthly Production Report
+  dpr_quarterly       // DPR Quarterly Report
+  dpr_annual          // DPR Annual Report
+  nnpc_report         // NNPC Report
+  gas_flare_report    // Gas Flare Report
+  royalty_report      // Royalty Calculation Report
+  jv_report           // Joint Venture Report
+  psc_report          // Production Sharing Contract Report
+  environmental       // Environmental Compliance Report
+  custom
+}
+
+enum RegulatoryReportStatus {
+  draft
+  pending_review
+  submitted
+  accepted
+  rejected
+  revision_required
+}
+
+model RegulatoryReport {
+  id                  String                    @id @default(cuid())
+  reportNumber        String                    @unique
+  reportType          RegulatoryReportType      @default(dpr_monthly)
+  reportingPeriod     String                    // e.g., "2024-01", "2024-Q1"
+  periodStart         DateTime
+  periodEnd           DateTime
+  status              RegulatoryReportStatus    @default(draft)
+  submissionDeadline  DateTime?
+  submittedDate       DateTime?
+  regulatoryBody      String?                   // DPR, NNPC, etc.
+  licenseBlock        String?
+  operatorName        String?
+  // Production Data
+  totalOilProduction  Float?                    @default(0)
+  totalGasProduction  Float?                    @default(0)
+  totalWaterProduction Float?                   @default(0)
+  totalCondensate     Float?                    @default(0)
+  // Gas Utilization
+  gasFlared           Float?                    @default(0)
+  gasReinjected       Float?                    @default(0)
+  gasSold             Float?                    @default(0)
+  gasUsedAsFuel       Float?                    @default(0)
+  gasLost             Float?                    @default(0)
+  flarePercentage     Float?                    @default(0)
+  // Export/Sales
+  totalExported       Float?                    @default(0)
+  domesticSales       Float?                    @default(0)
+  // Royalty
+  royaltyVolume       Float?                    @default(0)
+  royaltyValue        Float?                    @default(0)
+  royaltyRate         Float?                    @default(0)
+  // PPT/Taxes
+  pptOilVolume        Float?                    @default(0)
+  pptGasVolume        Float?                    @default(0)
+  // Well Counts
+  totalWells          Int?                      @default(0)
+  producingWells      Int?                      @default(0)
+  shutInWells         Int?                      @default(0)
+  newWellsDrilled     Int?                      @default(0)
+  // Approvals
+  preparedBy          String?
+  reviewedBy          String?
+  approvedBy          String?
+  approvedAt          DateTime?
+  rejectionReason     String?
+  fileUrl             String?                   // Uploaded report file
+  comments            String?
+  createdAt           DateTime                  @default(now())
+  updatedAt           DateTime                  @updatedAt
+
+  @@map("regulatory_reports")
+}
+
+model RegulatoryTemplate {
+  id                  String                @id @default(cuid())
+  templateName        String
+  reportType          RegulatoryReportType  @default(dpr_monthly)
+  regulatoryBody      String?
+  version             String?               @default("1.0")
+  fieldMapping        String?               // JSON mapping of fields
+  requiredFields      String?               // JSON array of required fields
+  validationRules     String?               // JSON validation rules
+  templateFileUrl     String?               // Template file for download
+  isActive            Boolean               @default(true)
+  effectiveFrom       DateTime?
+  effectiveTo         DateTime?
+  comments            String?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+
+  @@map("regulatory_templates")
+}
+
+// ============================================
+// MODULE 7: LOSS ACCOUNTING
+// ============================================
+
+enum LossCategory {
+  flaring
+  venting
+  spillage
+  evaporation
+  theft
+  measurement_error
+  shrinkage
+  pigging_losses
+  tank_bottoms
+  pipeline_losses
+  processing_losses
+  fuel_consumption
+  other
+}
+
+enum LossSeverity {
+  minor
+  moderate
+  major
+  critical
+}
+
+enum LossStatus {
+  reported
+  under_investigation
+  confirmed
+  recovered
+  written_off
+}
+
+model LossEvent {
+  id                  String        @id @default(cuid())
+  eventNumber         String        @unique
+  eventDate           DateTime
+  category            LossCategory  @default(other)
+  severity            LossSeverity  @default(minor)
+  status              LossStatus    @default(reported)
+  facilityId          String?
+  location            String?
+  product             String?
+  volumeLost          Float?        @default(0)  // bbls or scf
+  volumeUnit          String?       @default("bbls")
+  estimatedValue      Float?        @default(0)
+  currency            String?       @default("USD")
+  // Flaring/Venting specific
+  flaringReason       String?       // Safety, maintenance, emergency, routine
+  h2sContent          Float?        // H2S percentage if venting
+  duration            Float?        // Hours of flaring/venting
+  // Spillage specific
+  spillCause          String?
+  areaAffected        Float?        // sq meters
+  cleanupStatus       String?
+  environmentalImpact String?
+  // Investigation
+  rootCause           String?
+  investigationNotes  String?
+  investigatedBy      String?
+  investigationDate   DateTime?
+  // Recovery
+  volumeRecovered     Float?        @default(0)
+  recoveryMethod      String?
+  recoveryDate        DateTime?
+  // Reporting
+  reportedToRegulator Boolean       @default(false)
+  regulatoryReference String?
+  reportedBy          String?
+  approvedBy          String?
+  comments            String?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  @@map("loss_events")
+}
+
+model FlaringRecord {
+  id                  String    @id @default(cuid())
+  recordDate          DateTime
+  facilityId          String?
+  flaringPointId      String?
+  flaringPointName    String?
+  product             String?   @default("gas")
+  volumeFlared        Float?    @default(0)  // scf or mscf
+  volumeUnit          String?   @default("mscf")
+  duration            Float?    @default(0)  // Hours
+  flaringReason       String?   // routine, emergency, maintenance, safety
+  isPermitted         Boolean   @default(true)
+  permitReference     String?
+  emissionsEstimate   Float?    // Tonnes CO2e
+  heatContent         Float?    // BTU/scf
+  combustionEfficiency Float?   @default(98)  // %
+  comments            String?
+  recordedBy          String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@unique([recordDate, flaringPointId])
+  @@map("flaring_records")
+}
+
+model ShrinkageRecord {
+  id                  String    @id @default(cuid())
+  recordDate          DateTime
+  facilityId          String?
+  product             String?
+  inletVolume         Float?    @default(0)
+  outletVolume        Float?    @default(0)
+  shrinkageVolume     Float?    @default(0)
+  shrinkagePercent    Float?    @default(0)
+  shrinkageCause      String?   // Gas liberation, water removal, BS&W
+  temperature         Float?
+  pressure            Float?
+  apiGravityIn        Float?
+  apiGravityOut       Float?
+  bswIn               Float?
+  bswOut              Float?
+  comments            String?
+  recordedBy          String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@map("shrinkage_records")
+}
+
+// ============================================
+// MODULE 8: DECLINE CURVE ANALYSIS
+// ============================================
+
+enum DeclineType {
+  exponential
+  hyperbolic
+  harmonic
+}
+
+model DeclineAnalysis {
+  id                    String      @id @default(cuid())
+  analysisName          String
+  wellId                String?
+  wellName              String?
+  field                 String?
+  analysisDate          DateTime    @default(now())
+  declineType           DeclineType @default(exponential)
+  // Time period
+  dataStartDate         DateTime?
+  dataEndDate           DateTime?
+  forecastEndDate       DateTime?
+  // Decline parameters
+  initialRate           Float?      @default(0)  // qi - Initial production rate
+  currentRate           Float?      @default(0)
+  nominalDeclineRate    Float?      @default(0)  // Di - Annual decline rate %
+  effectiveDeclineRate  Float?      @default(0)  // De
+  bFactor               Float?      @default(0)  // b - Hyperbolic exponent (0-1)
+  economicLimit         Float?      @default(0)  // Minimum economic rate
+  // Cumulative production
+  cumulativeToDate      Float?      @default(0)
+  estimatedUltimateRecovery Float?  @default(0)  // EUR
+  remainingReserves     Float?      @default(0)
+  recoveryFactor        Float?      @default(0)  // %
+  // Forecast results (stored as JSON)
+  forecastData          String?     // JSON array of {date, rate, cumulative}
+  // Statistical measures
+  rSquared              Float?      // Goodness of fit
+  standardError         Float?
+  confidenceLevel       Float?      @default(90)  // %
+  // Analysis metadata
+  performedBy           String?
+  approvedBy            String?
+  approvedAt            DateTime?
+  methodology           String?
+  assumptions           String?
+  comments              String?
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  @@map("decline_analyses")
+}
+
+model ProductionForecast {
+  id                  String    @id @default(cuid())
+  forecastName        String
+  wellId              String?
+  field               String?
+  facilityId          String?
+  forecastDate        DateTime  @default(now())
+  forecastType        String?   // short-term, mid-term, long-term
+  startDate           DateTime
+  endDate             DateTime
+  // Annual/Monthly forecasts (stored as JSON)
+  forecastData        String?   // JSON: [{period, oilRate, gasRate, waterRate, cumOil, cumGas}]
+  totalOilForecast    Float?    @default(0)
+  totalGasForecast    Float?    @default(0)
+  totalWaterForecast  Float?    @default(0)
+  // Scenario
+  scenario            String?   @default("base")  // base, upside, downside
+  probability         Float?    @default(50)       // P50, P10, P90
+  // Assumptions
+  assumptions         String?
+  constraints         String?
+  // Metadata
+  createdBy           String?
+  approvedBy          String?
+  approvedAt          DateTime?
+  comments            String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@map("production_forecasts")
+}
+
+// ============================================
+// MODULE 9: INJECTION WELLS
+// ============================================
+
+enum InjectionType {
+  water_injection
+  gas_injection
+  wag             // Water Alternating Gas
+  steam_injection
+  polymer_injection
+  co2_injection
+}
+
+enum InjectorStatus {
+  active
+  inactive
+  shut_in
+  workover
+  abandoned
+}
+
+model InjectionWell {
+  id                    String          @id @default(cuid())
+  wellName              String
+  wellId                String          @unique
+  field                 String?
+  facilityId            String?
+  reservoirZone         String?
+  injectionType         InjectionType   @default(water_injection)
+  status                InjectorStatus  @default(active)
+  latitude              Float?
+  longitude             Float?
+  completionDate        DateTime?
+  conversionDate        DateTime?       // If converted from producer
+  originalWellType      String?         // oil, gas if converted
+  targetFormation       String?
+  perforationInterval   String?         // e.g., "5000-5200 ft"
+  maxInjectionRate      Float?          // bbl/day or scf/day
+  maxInjectionPressure  Float?          // psi
+  tubingSize            Float?          // inches
+  casingSize            Float?          // inches
+  packerDepth           Float?          // ft
+  // Current status
+  currentInjectionRate  Float?          @default(0)
+  currentPressure       Float?          @default(0)
+  cumulativeInjection   Float?          @default(0)
+  // Associated producers
+  associatedProducers   String?         // JSON array of well IDs
+  patternType           String?         // 5-spot, 7-spot, line drive, etc.
+  // Monitoring
+  lastTestDate          DateTime?
+  nextTestDate          DateTime?
+  comments              String?
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  injectionData         InjectionData[]
+  injectionTests        InjectionTest[]
+
+  @@map("injection_wells")
+}
+
+model InjectionData {
+  id                    String        @id @default(cuid())
+  injectionWellId       String
+  injectionWell         InjectionWell @relation(fields: [injectionWellId], references: [id], onDelete: Cascade)
+  injectionDate         DateTime
+  injectionVolume       Float?        @default(0)  // bbls or scf
+  volumeUnit            String?       @default("bbls")
+  injectionRate         Float?        @default(0)  // bbl/day or scf/day
+  injectionPressure     Float?        @default(0)  // psi
+  tubingPressure        Float?
+  casingPressure        Float?
+  temperature           Float?
+  waterQuality          String?       // For water injection - salinity, etc.
+  chemicalConcentration Float?        // For chemical EOR
+  operatingHours        Float?        @default(24)
+  downtime              Float?        @default(0)
+  downtimeReason        String?
+  comments              String?
+  recordedBy            String?
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  @@unique([injectionWellId, injectionDate])
+  @@map("injection_data")
+}
+
+model InjectionTest {
+  id                    String        @id @default(cuid())
+  injectionWellId       String
+  injectionWell         InjectionWell @relation(fields: [injectionWellId], references: [id], onDelete: Cascade)
+  testDate              DateTime
+  testType              String?       // Injectivity, falloff, step-rate
+  duration              Float?        // Hours
+  injectionRate         Float?
+  injectionPressure     Float?
+  stabilizedPressure    Float?
+  injectivityIndex      Float?        // bbl/day/psi
+  skinFactor            Float?
+  permeability          Float?        // mD
+  reservoirPressure     Float?
+  formationDamage       String?       // None, minor, moderate, severe
+  performedBy           String?
+  comments              String?
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  @@map("injection_tests")
+}
+
+// ============================================
+// MODULE 10: AUDIT TRAIL / CHANGE LOG
+// ============================================
+
+enum AuditAction {
+  create
+  update
+  delete
+  view
+  export
+  import
+  approve
+  reject
+  login
+  logout
+}
+
+model AuditLog {
+  id              String      @id @default(cuid())
+  timestamp       DateTime    @default(now())
+  userId          String?
+  userEmail       String?
+  userName        String?
+  userRole        String?
+  action          AuditAction
+  entityType      String      // Well, Production, Allocation, etc.
+  entityId        String?
+  entityName      String?
+  description     String?
+  // Change details
+  previousValues  String?     // JSON of old values
+  newValues       String?     // JSON of new values
+  changedFields   String?     // JSON array of field names
+  // Request context
+  ipAddress       String?
+  userAgent       String?
+  sessionId       String?
+  requestPath     String?
+  requestMethod   String?
+  // Status
+  success         Boolean     @default(true)
+  errorMessage    String?
+  // Metadata
+  module          String?     // Dashboard, Wells, Production, etc.
+  subModule       String?
+  notes           String?
+  createdAt       DateTime    @default(now())
+
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([timestamp])
+  @@index([action])
+  @@map("audit_logs")
+}
+
+model DataChangeHistory {
+  id              String    @id @default(cuid())
+  changeDate      DateTime  @default(now())
+  tableName       String
+  recordId        String
+  fieldName       String
+  oldValue        String?
+  newValue        String?
+  changeType      String    // INSERT, UPDATE, DELETE
+  changedBy       String?
+  changeReason    String?
+  batchId         String?   // For bulk changes
+  isRollbackable  Boolean   @default(true)
+  rolledBack      Boolean   @default(false)
+  rollbackDate    DateTime?
+  rollbackBy      String?
+  createdAt       DateTime  @default(now())
+
+  @@index([tableName, recordId])
+  @@index([changeDate])
+  @@index([changedBy])
+  @@map("data_change_history")
+}
+
+model SystemActivityLog {
+  id              String    @id @default(cuid())
+  activityDate    DateTime  @default(now())
+  activityType    String    // Report Generated, Data Import, Export, Backup, etc.
+  description     String?
+  userId          String?
+  userEmail       String?
+  // Details
+  entityType      String?
+  entityCount     Int?      @default(0)
+  fileSize        Float?    // For imports/exports
+  fileName        String?
+  duration        Float?    // Seconds
+  status          String?   @default("success")
+  errorDetails    String?
+  // System info
+  serverName      String?
+  processId       String?
+  memoryUsage     Float?
+  cpuUsage        Float?
+  notes           String?
+  createdAt       DateTime  @default(now())
+
+  @@index([activityDate])
+  @@index([activityType])
+  @@index([userId])
+  @@map("system_activity_logs")
+}
+
+// Document Attachments
+enum AttachmentEntityType {
+  well
+  facility
+  production
+  well_test
+  allocation
+  meter
+  tank
+  custody_transfer
+  nomination
+  lifting
+  loss_event
+  regulatory_report
+  injection_well
+}
+
+model Attachment {
+  id            String               @id @default(cuid())
+  fileName      String
+  originalName  String
+  mimeType      String
+  fileSize      Int                  // bytes
+  cloudStoragePath String            // S3 key
+  isPublic      Boolean              @default(false)
+  entityType    AttachmentEntityType
+  entityId      String
+  description   String?
+  uploadedById  String?
+  uploadedBy    String?              // User email for display
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  @@index([entityType, entityId])
+  @@index([uploadedById])
+  @@map("attachments")
+}
+
+// Notification Settings
+model NotificationSetting {
+  id              String    @id @default(cuid())
+  userId          String?
+  userEmail       String?
+  notificationType String   // production_alert, system_alert, scheduled_report
+  isEnabled       Boolean   @default(true)
+  emailEnabled    Boolean   @default(true)
+  thresholds      String?   // JSON for custom thresholds
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([userId, notificationType])
+  @@index([notificationType])
+  @@map("notification_settings")
+}
+
+// Production Alert Configuration
+model AlertConfiguration {
+  id                  String    @id @default(cuid())
+  alertType           String    // low_production, high_water_cut, equipment_failure, etc.
+  entityType          String?   // well, facility, meter
+  entityId            String?   // specific entity or null for all
+  threshold           Float?
+  thresholdUnit       String?
+  comparisonOperator  String?   // lt, gt, lte, gte, eq
+  isActive            Boolean   @default(true)
+  notifyOnBreach      Boolean   @default(true)
+  cooldownMinutes     Int       @default(60)
+  lastTriggeredAt     DateTime?
+  createdById         String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([alertType])
+  @@index([entityType, entityId])
+  @@map("alert_configurations")
+}
