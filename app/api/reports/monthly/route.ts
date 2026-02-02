@@ -45,14 +45,14 @@ export async function GET(req: NextRequest) {
       _count: true,
     });
 
-    const wellIds = wellProduction.map((w) => w.wellId);
+    const wellIds = wellProduction.map((w: any) => w.wellId);
     const wells = await prisma.well.findMany({
       where: { id: { in: wellIds } },
       include: { facility: true },
     });
-    const wellMap = Object.fromEntries(wells.map((w) => [w.id, w]));
+    const wellMap = Object.fromEntries(wells.map((w: any) => [w.id, w]));
 
-    const byWell = wellProduction.map((w) => {
+    const byWell = wellProduction.map((w: any) => {
       const well = wellMap[w.wellId];
       return {
         wellId: w.wellId,
@@ -99,7 +99,7 @@ export async function GET(req: NextRequest) {
       ORDER BY total_oil DESC
     `;
 
-    const byField = (fieldProductionRaw ?? []).map((f) => ({
+    const byField = (fieldProductionRaw ?? []).map((f: any) => ({
       field: f?.field ?? 'Unknown',
       totalOil: Math.round(Number(f?.total_oil ?? 0) * 100) / 100,
       totalGas: Math.round(Number(f?.total_gas ?? 0) * 100) / 100,

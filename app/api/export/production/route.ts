@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
     });
 
     // Transform data for Excel
-    const data = productions.map((p) => ({
+    const data = productions.map((p: any) => ({
       'Production Date': p.productionDate.toISOString().split('T')[0],
       'Well Name': p.well.wellName,
       'Well ID': p.well.wellId,

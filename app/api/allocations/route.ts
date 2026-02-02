@@ -153,7 +153,7 @@ export async function POST(request: NextRequest) {
         comments: validatedData.comments,
         createdById: (session.user as any)?.id,
         productionAllocations: {
-          create: processedAllocations.map((wa) => ({
+          create: processedAllocations.map((wa: any) => ({
             wellId: wa.wellId,
             allocatedOilVolume: wa.allocatedOilVolume || 0,
             allocatedGasVolume: wa.allocatedGasVolume || 0,
@@ -269,7 +269,7 @@ function applyProRataAllocation(
     0
   );
 
-  return wellAllocations.map((wa) => {
+  return wellAllocations.map((wa: any) => {
     const factor = (wa.allocationFactor || 0) / totalFactor;
     return {
       ...wa,

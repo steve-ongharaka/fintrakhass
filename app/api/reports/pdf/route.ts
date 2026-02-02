@@ -304,7 +304,7 @@ function generateReportHTML(
           <div class="summary-box">
             <h3>Summary Statistics</h3>
             <div class="summary-grid">
-              ${Object.entries(reportData.summary).map(([key, value]) => `
+              ${Object.entries(reportData.summary).map(([key, value]: [string, any]) => `
                 <div class="summary-item">
                   <div class="label">${key.replace(/([A-Z])/g, ' $1').trim()}</div>
                   <div class="value">${typeof value === 'number' ? value.toLocaleString() : value}</div>
