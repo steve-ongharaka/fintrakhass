@@ -4,9 +4,6 @@ const path = require('path');
 const nextConfig = {
   distDir: process.env.NEXT_DIST_DIR || '.next',
   output: process.env.NEXT_OUTPUT_MODE,
-  experimental: {
-    outputFileTracingRoot: path.join(__dirname, '../'),
-  },
   eslint: {
     ignoreDuringBuilds: true,
   },
@@ -15,5 +12,12 @@ const nextConfig = {
   },
   images: { unoptimized: true },
 };
+
+// Only use outputFileTracingRoot in local development (Abacus environment)
+if (process.env.NEXT_DIST_DIR) {
+  nextConfig.experimental = {
+    outputFileTracingRoot: path.join(__dirname, '../'),
+  };
+}
 
 module.exports = nextConfig;
