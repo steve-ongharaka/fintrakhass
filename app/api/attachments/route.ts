@@ -42,7 +42,7 @@ export async function GET(request: Request) {
 
     // Generate URLs for each attachment
     const attachmentsWithUrls = await Promise.all(
-      attachments.map(async (att) => ({
+      attachments.map(async (att: any) => ({
         ...att,
         downloadUrl: await getFileUrl(att.cloudStoragePath, att.isPublic),
       }))
