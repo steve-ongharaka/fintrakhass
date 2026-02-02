@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    const dailyTrend = dailyProduction.map((d) => ({
+    const dailyTrend = dailyProduction.map((d: any) => ({
       date: d.productionDate.toISOString().split('T')[0],
       oil: Math.round((d._sum?.netOilVolume ?? 0) * 100) / 100,
       gas: Math.round((d._sum?.stdGasVolume ?? 0) * 100) / 100,
@@ -117,7 +117,7 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    const gorTrend = gorWaterCutTrend.map((d) => ({
+    const gorTrend = gorWaterCutTrend.map((d: any) => ({
       date: d.productionDate.toISOString().split('T')[0],
       gor: Math.round((d._avg?.gor ?? 0) * 100) / 100,
       waterCut: Math.round((d._avg?.waterCut ?? 0) * 100) / 100,
