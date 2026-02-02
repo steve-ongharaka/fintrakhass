@@ -35,8 +35,8 @@ export async function GET() {
     ];
 
     // Merge with defaults for any missing types
-    const mergedSettings = defaultTypes.map(def => {
-      const existing = settings.find(s => s.notificationType === def.notificationType);
+    const mergedSettings = defaultTypes.map((def: any) => {
+      const existing = settings.find((s: any) => s.notificationType === def.notificationType);
       return existing || { ...def, userId, id: null };
     });
 
